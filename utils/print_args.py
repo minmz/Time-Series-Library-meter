@@ -11,7 +11,7 @@ def print_args(args):
     print(f'  {"Checkpoints:":<20}{args.checkpoints:<20}')
     print()
 
-    if args.task_name in ['long_term_forecast', 'short_term_forecast']:
+    if args.task_name in ['long_term_forecast', 'short_term_forecast', 'agentic_flow_forecast']:
         print("\033[1m" + "Forecasting Task" + "\033[0m")
         print(f'  {"Seq Len:":<20}{args.seq_len:<20}{"Label Len:":<20}{args.label_len:<20}')
         print(f'  {"Pred Len:":<20}{args.pred_len:<20}{"Seasonal Patterns:":<20}{args.seasonal_patterns:<20}')
@@ -56,3 +56,13 @@ def print_args(args):
     p_hidden_dims_str = ', '.join(map(str, args.p_hidden_dims))
     print(f'  {"P Hidden Dims:":<20}{p_hidden_dims_str:<20}{"P Hidden Layers:":<20}{args.p_hidden_layers:<20}') 
     print()
+
+    if args.task_name == 'agentic_flow_forecast':
+        print("\033[1m" + "Agentic Flow" + "\033[0m")
+        print(f'  {"Stage:":<20}{args.agentic_stage:<20}{"Manifest:":<20}{args.candidate_manifest:<20}')
+        print(f'  {"Meta Cache Dir:":<20}{args.meta_cache_dir:<20}{"Meta LR:":<20}{args.meta_lr:<20}')
+        print(f'  {"Top-k Cands:":<20}{args.top_k_candidates:<20}{"Risk Thres.:":<20}{args.risk_threshold:<20}')
+        print(f'  {"Case TopN:":<20}{args.case_topn:<20}{"Meta Hidden:":<20}{args.meta_hidden:<20}')
+        print(f'  {"Route Wt:":<20}{args.route_loss_weight:<20}{"Risk Wt:":<20}{args.risk_loss_weight:<20}')
+        print(f'  {"Rev Margin:":<20}{args.revision_margin:<20}{"Overwrite Cache:":<20}{args.overwrite_meta_cache:<20}')
+        print()

@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 
 def RSE(pred, true):
@@ -39,3 +40,21 @@ def metric(pred, true):
     mspe = MSPE(pred, true)
 
     return mae, mse, rmse, mape, mspe
+
+# 补了样本级误差函数，给路由标签和风险标签用。
+
+# 样本级误差函数
+def samplewise_mse(pred, true):
+    if isinstance(pred, torch.Tensor):
+        reduce_dims = tuple(range(1, pred.ndim))
+        return torch.mean((pred - true) ** 2, dim=reduce_dims)
+    reduce_dims = tuple(range(1, pred.ndim))
+    return np.mean((pred - true) ** 2, axis=reduce_dims)
+
+
+def samplewise_mae(pred, true):
+    if isinstance(pred, torch.Tensor):
+        reduce_dims = tuple(range(1, pred.ndim))
+        return torch.mean(torch.abs(pred - true), dim=reduce_dims)
+    reduce_dims = tuple(range(1, pred.ndim))
+    return np.mean(np.abs(pred - true), axis=reduce_dims)

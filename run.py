@@ -16,7 +16,7 @@ if __name__ == '__main__':
 
     # basic config
     parser.add_argument('--task_name', type=str, required=True, default='long_term_forecast',
-                        help='task name, options:[long_term_forecast, short_term_forecast, imputation, classification, anomaly_detection]')
+                        help='task name, options:[long_term_forecast, short_term_forecast, imputation, classification, anomaly_detection, agentic_flow_forecast]')
     parser.add_argument('--is_training', type=int, required=True, default=1, help='status')
     parser.add_argument('--model_id', type=str, required=True, default='test', help='model id')
     parser.add_argument('--model', type=str, required=True, default='Autoformer',
@@ -152,6 +152,42 @@ if __name__ == '__main__':
     parser.add_argument('--top_p', type=float, default=0.5, help='Dynamic Routing in MoE')
     parser.add_argument('--pos', type=int, choices=[0, 1], default=1, help='Positional Embedding. Set pos to 0 or 1')
 
+    #新增agentic_flow_forecast 任务和相关参数
+    # Agentic Flow
+    # 控制现在在跑哪一个阶段：collect_meta：只生成离线 meta cache、train_meta：只训练路由器/风险模块/融合头、full：先生成 cache，再训练，再测试
+    parser.add_argument('--agentic_stage', type=str, default='full',
+                        choices=['collect_meta', 'train_meta', 'full'],
+                        help='agentic flow stage control')
+    # 候选模型池配置文件路径：用哪些基础模型、每个模型的checkpoint在哪、每个模型是否有自己的参数覆盖，决定智能体能调哪些预测器
+    parser.add_argument('--candidate_manifest', type=str,
+                        default='./configs/agentic_flow/sample_manifest.json',
+                        help='path to candidate-model manifest json')
+    # 离线缓存目录：存状态特征、候选模型预测、每个模型的误差、最优模型标签、风险标签，也就是“决策层训练数据”的保存位置。
+    parser.add_argument('--meta_cache_dir', type=str, default='./meta_cache/',
+                        help='directory used to store offline meta caches')
+    # 路由器选出多少个候选模型进入下一步，例如候选池有 5 个模型，top_k_candidates=3 就表示只保留得分最高的 3 个模型做后续融合或修正。
+    parser.add_argument('--top_k_candidates', type=int, default=3,
+                        help='number of candidate models kept after routing')
+    # 风险阈值，风险模块输出一个风险分数，超过这个值就会认为：“这次预测不够稳，需要走修正分支”，低于这个值就直接用初始路由结果。
+    parser.add_argument('--risk_threshold', type=float, default=0.5,
+                        help='threshold used to decide whether revision is necessary')
+    # 案例库检索最近邻的数量：例如设成 10，表示对当前样本找历史上最相似的 10 个案例，用它们统计，哪些模型更常赢，哪些模型更稳，平均误差大概多少
+    parser.add_argument('--case_topn', type=int, default=10,
+                        help='number of nearest historical cases used by the case bank')
+    # 决策层隐藏维度
+    parser.add_argument('--meta_hidden', type=int, default=128,
+                        help='hidden size for the lightweight agentic-flow modules')
+    parser.add_argument('--meta_lr', type=float, default=0.001,
+                        help='learning rate for the meta-policy network')
+    parser.add_argument('--route_loss_weight', type=float, default=1.0,
+                        help='loss weight for the routing objective')
+    parser.add_argument('--risk_loss_weight', type=float, default=0.5,
+                        help='loss weight for the risk-verification objective')
+    parser.add_argument('--revision_margin', type=float, default=1e-4,
+                        help='minimum gain required to label a sample as revision-worthy')
+    parser.add_argument('--overwrite_meta_cache', action='store_true', default=False,
+                        help='rebuild offline meta caches even if cached files already exist')
+
     args = parser.parse_args()
     if torch.cuda.is_available() and args.use_gpu:
         args.device = torch.device('cuda:{}'.format(args.gpu))
@@ -191,6 +227,9 @@ if __name__ == '__main__':
     elif args.task_name == 'zero_shot_forecast':
         from exp.exp_zero_shot_forecasting import Exp_Zero_Shot_Forecast
         Exp = Exp_Zero_Shot_Forecast
+    elif args.task_name == 'agentic_flow_forecast':
+        from exp.exp_agentic_flow_forecasting import Exp_Agentic_Flow_Forecast
+        Exp = Exp_Agentic_Flow_Forecast
     else:
         from exp.exp_long_term_forecasting import Exp_Long_Term_Forecast
         Exp = Exp_Long_Term_Forecast

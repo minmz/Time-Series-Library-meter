@@ -9,12 +9,42 @@ from sklearn.preprocessing import StandardScaler
 from utils.timefeatures import time_features
 from data_provider.m4 import M4Dataset, M4Meta
 from data_provider.uea import subsample, interpolate_missing, Normalizer
-from sktime.datasets import load_from_tsfile_to_dataframe
 import warnings
 from utils.augmentation import run_augmentation_single
-from datasets import load_dataset
-from huggingface_hub import hf_hub_download
 warnings.filterwarnings('ignore')
+
+try:
+    from sktime.datasets import load_from_tsfile_to_dataframe as _load_from_tsfile_to_dataframe
+except ImportError:
+    _load_from_tsfile_to_dataframe = None
+
+try:
+    from datasets import load_dataset as _hf_load_dataset
+except ImportError:
+    _hf_load_dataset = None
+
+try:
+    from huggingface_hub import hf_hub_download as _hf_hub_download
+except ImportError:
+    _hf_hub_download = None
+
+
+def load_from_tsfile_to_dataframe(*args, **kwargs):
+    if _load_from_tsfile_to_dataframe is None:
+        raise ImportError("sktime is required only for UEA classification datasets.")
+    return _load_from_tsfile_to_dataframe(*args, **kwargs)
+
+
+def load_dataset(*args, **kwargs):
+    if _hf_load_dataset is None:
+        raise ImportError("datasets is required when data needs to be pulled from Hugging Face.")
+    return _hf_load_dataset(*args, **kwargs)
+
+
+def hf_hub_download(*args, **kwargs):
+    if _hf_hub_download is None:
+        raise ImportError("huggingface_hub is required when downloading hosted dataset files.")
+    return _hf_hub_download(*args, **kwargs)
 
 HUGGINGFACE_REPO = "thuml/Time-Series-Library"
 

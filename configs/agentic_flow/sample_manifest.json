@@ -1,0 +1,31 @@
+{
+  "tag": "sample_agentic_flow",
+  "description": "Replace each checkpoint path with a real pretrained checkpoint before running the agentic-flow experiment.",
+  "candidates": [
+    {
+      "name": "DLinear",
+      "checkpoint": "../../checkpoints/replace_with_dlinear_checkpoint/checkpoint.pth",
+      "overrides": {}
+    },
+    {
+      "name": "PatchTST",
+      "checkpoint": "../../checkpoints/replace_with_patchtst_checkpoint/checkpoint.pth",
+      "overrides": {}
+    },
+    {
+      "name": "TimesNet",
+      "checkpoint": "../../checkpoints/replace_with_timesnet_checkpoint/checkpoint.pth",
+      "overrides": {}
+    },
+    {
+      "name": "iTransformer",
+      "checkpoint": "../../checkpoints/replace_with_itransformer_checkpoint/checkpoint.pth",
+      "overrides": {}
+    },
+    {
+      "name": "TimeMixer",
+      "checkpoint": "../../checkpoints/replace_with_timemixer_checkpoint/checkpoint.pth",
+      "overrides": {}
+    }
+  ]
+}
