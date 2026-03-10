@@ -1,0 +1,156 @@
+\documentclass[journal,twoside,web]{ieeecolor}
+\usepackage{generic}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{CJKutf8}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\markboth{\journalname, VOL. XX, NO. XX, XXXX}
+{Anonymous Submission: SDPF}
+
+\begin{document}
+
+\title{SDPF: A State-Driven Prediction Decision Framework for Heterogeneous Time Series Forecasting}
+\author{Anonymous Submission}
+
+\maketitle
+\begin{CJK*}{UTF8}{gbsn}
+
+\begin{abstract}
+现有时间序列预测方法大多围绕单一模型结构展开，默认同一预测器可以在不同序列状态下稳定工作。然而在异质性强、分布变化频繁、预测跨度多样的场景中，不同样本往往对应不同的最优预测策略，固定模型或静态集成难以持续保持优势。针对这一问题，本文提出一种状态驱动的预测决策框架 SDPF。该方法在一组强基预测器之上构建轻量决策层，通过状态编码器提取趋势、季节性、波动性、平稳性与近期误差等特征，再由策略路由器动态选择候选模型；随后利用风险校验器根据模型分歧、残差统计与路由不确定性识别高风险预测，并结合经验案例库进行有限预算修正；最终由修正融合器输出预测结果。本文不改变基础预测器结构，而是在其上学习样本级预测策略，从而兼顾精度、稳定性与可解释性。实验将在 Electricity、Traffic、Weather、Exchange 和 ILI 等公开数据集上展开，并以 DLinear、PatchTST、TimesNet、iTransformer 和 TimeMixer 作为核心基线与候选模型池，系统评估状态驱动预测决策的有效性。
+\end{abstract}
+
+\begin{IEEEkeywords}
+时间序列预测, 动态模型选择, 状态驱动决策, 经验检索, 风险校验
+\end{IEEEkeywords}
+
+\section{引言}
+时间序列预测是能源调度、交通控制、气象分析和公共健康监测中的基础任务。近年来，大量工作通过结构创新不断刷新标准 benchmark 的结果，例如线性预测器、基于 patch 的 Transformer、时频联合建模方法、变量维重排方法和多尺度混合方法等~\cite{dlinear,patchtst,timesnet,itransformer,timemixer}。尽管这些方法在模型设计层面取得了明显进展，但大多数研究仍遵循相同的任务设定：给定一段历史序列，执行一次固定的预测函数，直接输出未来值。
+
+这种范式隐含了一个较强假设，即同一模型或同一静态集成策略可以适应不同样本的结构差异。实际情况并非如此。部分样本以强趋势和低噪声为主，更适合具有线性归纳偏置的预测器；部分样本具有复杂周期结构和长依赖，更适合 patch 或 Transformer 类方法；还有一些样本在局部突变或非平稳阶段中表现出明显的策略切换需求。换言之，真正影响性能的不仅是模型能力，还包括当前样本应采用何种预测策略。
+
+基于这一观察，本文将时间序列预测建模为\textbf{状态条件化的策略选择问题}。核心思想是：先识别当前样本的状态，再决定采用哪些候选模型，随后评估当前结果是否可靠，并在必要时利用历史相似案例进行小范围修正。围绕这一思想，本文提出状态驱动预测决策框架 SDPF。该框架在保持基预测器不变的前提下，引入一个轻量、可学习、可解释的决策层，用于完成模型路由、风险校验和结果修正。
+
+本文贡献如下。第一，提出一种状态驱动的时间序列预测决策框架，在多个基础预测器之上学习样本级策略，而非重新设计新的预测 backbone。第二，设计策略路由、风险校验和经验检索协同机制，使系统能够识别高风险预测并在有限预算下完成修正。第三，构建面向公开数据集的系统实验方案，从主结果、消融、效率和案例分析四个层面验证方法有效性。
+
+\section{相关工作}
+\subsection{时间序列预测模型}
+现有时间序列预测研究主要集中在单模型结构设计上。线性预测器在长时序任务中具备良好的效率与归纳偏置；PatchTST 将时间序列切分为 patch 以建模长依赖；TimesNet 从时频二维表示出发统一建模多种时序模式；iTransformer 通过变量维重排强化跨变量关联建模；TimeMixer 通过多尺度混合进一步提升了复杂场景下的预测表现~\cite{dlinear,patchtst,timesnet,itransformer,timemixer}。这些方法显著提升了单模型性能，但通常默认所有样本共享同一套预测机制，因此难以显式处理样本间的结构异质性。
+
+\subsection{动态模型选择与集成}
+另一类工作关注模型选择、专家混合和集成学习。与单模型相比，这类方法能够在一定程度上缓解模型偏置，但多数方法仍然采用全局固定权重或静态 gating，缺乏对样本状态、结果风险和历史案例的联合建模。本文与这类方法最接近，但更强调\textbf{状态驱动的样本级策略学习}，而不是仅在输出层做简单加权。
+
+\subsection{可靠性建模与经验迁移}
+近年来，预测不确定性、残差诊断和测试时自适应逐渐受到关注。这些研究说明，仅仅输出一个数值预测往往不足以支撑稳定决策。同时，基于检索的经验迁移也表明，相似样本之间存在可复用的策略信息。本文将风险校验与经验检索合并到同一决策层中，以构建一个更完整的预测决策过程。
+
+\section{方法}
+\subsection{问题定义}
+给定历史多变量时间序列 $X_{1:T}\in\mathbb{R}^{T\times C}$，目标是预测未来 $H$ 步序列 $Y_{T+1:T+H}$。设候选模型池为
+\begin{equation}
+\mathcal{F}=\{f_1,f_2,\ldots,f_M\},
+\label{eq:model_pool}
+\end{equation}
+其中 $M=5$，对应 DLinear、PatchTST、TimesNet、iTransformer 和 TimeMixer。本文的目标不是训练新的基预测器，而是学习一个决策函数 $\pi$，使其能够根据当前样本状态选择合适的模型组合、判断预测风险并输出最终预测结果：
+\begin{equation}
+\hat{Y}=\pi(X_{1:T};\mathcal{F}).
+\label{eq:overall}
+\end{equation}
+
+\subsection{框架概览}
+SDPF 包含五个核心部件：状态编码器、策略路由器、风险校验器、经验案例库和修正融合器。状态编码器负责把原始序列映射为紧凑的状态向量；策略路由器根据状态向量选择 top-$K$ 个候选预测器；风险校验器评估当前候选结果的可靠性；经验案例库检索与当前状态相似的历史样本及其有效策略；修正融合器在必要时整合候选结果和历史经验，生成最终预测。与静态集成相比，SDPF 显式建模了“样本状态$\rightarrow$策略选择$\rightarrow$风险判断$\rightarrow$有限修正”这一链条，因此更接近面向样本的预测策略学习。
+
+\subsection{状态编码器}
+状态编码器从输入序列中提取四类特征。第一类是基础统计特征，包括均值、标准差、偏度、峰度、滚动波动率和缺失比例。第二类是结构特征，包括趋势斜率、周期强度、自相关峰值和主频能量。第三类是稳定性特征，包括平稳性检验统计量、局部漂移幅度和窗口间分布差异。第四类是近期拟合特征，包括历史滚动窗口上各候选模型的误差概况、误差波动和模型分歧。将上述特征拼接后输入多层感知机，得到状态表示
+\begin{equation}
+s = E(X_{1:T}),
+\label{eq:state}
+\end{equation}
+其中 $s\in\mathbb{R}^{d}$。这个状态表示不直接用于数值预测，而是专门用于描述当前样本的状态类型，为后续决策提供依据。
+
+\subsection{策略路由器}
+策略路由器根据状态向量 $s$ 对候选模型池进行打分：
+\begin{equation}
+p = \mathrm{softmax}(R(s)),
+\label{eq:router}
+\end{equation}
+其中 $p\in\mathbb{R}^{M}$ 表示各模型被选中的概率分布。系统从中选出 top-$K$ 个模型进入执行阶段，记为 $\mathcal{F}_{top}$。这种设计兼顾了效率和多样性。如果只固定选择一个模型，系统容易在分布变化时失效；如果每次都调用全部模型，计算开销会显著上升。top-$K$ 路由允许系统在有限预算下保留必要的候选空间。
+
+\subsection{风险校验器}
+仅依赖路由器的输出仍然不够，因为同样的候选集合在不同样本上可能表现出截然不同的可靠性。为此，本文引入风险校验器，对当前预测结果进行二次评估。设 top-$K$ 个候选模型的输出为 $\hat{Y}^{(1)},\hat{Y}^{(2)},\ldots,\hat{Y}^{(K)}$。风险校验器综合候选输出之间的分歧程度、路由概率熵、历史滚动残差统计和状态漂移强度，输出一个风险分数
+\begin{equation}
+q = V\bigl(s,\hat{Y}^{(1:K)},d\bigr),
+\label{eq:risk}
+\end{equation}
+其中 $d$ 表示诊断特征集合。当 $q$ 超过阈值 $\tau$ 时，说明当前预测存在较高不确定性，需要触发修正；否则直接进入结果输出阶段。这样可以避免对所有样本都进行额外处理，从而把修正预算集中在真正困难的样本上。
+
+\subsection{经验案例库}
+经验案例库用于存储历史状态、已采用策略及其真实效果。每个案例单元由三部分组成：状态表示 $s_i$、策略摘要 $a_i$ 和效果记录 $e_i$。其中，策略摘要包括被选中的模型集合、融合权重和是否触发过修正；效果记录包括最终误差以及稳定性指标。测试时，系统根据当前状态向量在案例库中检索相似案例：
+\begin{equation}
+\mathcal{N}(s)=\mathrm{kNN}(s,\mathcal{B}),
+\label{eq:memory}
+\end{equation}
+其中 $\mathcal{B}$ 表示案例库。检索到的相似案例用于提供两类信息：一是历史上在相似状态下更有效的模型组合；二是在高风险样本上更稳健的融合方式。
+
+\subsection{修正融合器}
+当风险校验器触发修正时，修正融合器结合当前候选输出与案例检索信息生成最终预测。设检索到的案例摘要为 $c$，则融合权重定义为
+\begin{equation}
+\alpha = \mathrm{softmax}\bigl(H(s,q,c,d)\bigr),
+\label{eq:fusion}
+\end{equation}
+其中 $\alpha\in\mathbb{R}^{K}$。最终预测为
+\begin{equation}
+\hat{Y}=\sum_{i=1}^{K}\alpha_i\hat{Y}^{(i)}, \qquad \sum_{i=1}^{K}\alpha_i=1.
+\label{eq:final}
+\end{equation}
+若风险分数较低，则修正融合器可退化为简单加权；若风险分数较高，则更依赖案例库提供的保守先验，并适当降低高波动模型的权重。
+
+\subsection{训练策略}
+训练分为两个阶段。第一阶段，分别训练五个基础预测器，得到固定的候选模型池。第二阶段，基于训练集内部的滚动窗口构建元样本，训练状态编码器、策略路由器、风险校验器和修正融合器。总损失为
+\begin{equation}
+\mathcal{L}=\mathcal{L}_{pred}+\lambda_1\mathcal{L}_{route}+\lambda_2\mathcal{L}_{risk}+\lambda_3\mathcal{L}_{fuse}.
+\label{eq:loss}
+\end{equation}
+其中，$\mathcal{L}_{pred}$ 用于监督最终预测结果，$\mathcal{L}_{route}$ 用于学习更优的模型选择策略，$\mathcal{L}_{risk}$ 用于学习风险判断，$\mathcal{L}_{fuse}$ 用于优化修正后的动态融合。为避免信息泄漏，元样本中的标签全部来自训练阶段和验证阶段可获得的真实未来值；测试阶段仅使用冻结后的决策层和案例库，不再利用测试期真值更新任何模块。
+
+\section{实验设计}
+\subsection{数据集与设置}
+实验采用五个公开数据集：Electricity、Traffic、Weather、Exchange 和 ILI。对 Electricity、Traffic、Weather 和 Exchange 使用预测长度 $96$、$192$、$336$ 和 $720$；对 ILI 使用更短的 horizon 设置。评价指标采用 MSE 和 MAE，并补充统计平均推理耗时、平均调用模型数以及触发修正的比例，用于衡量方法代价。所有方法采用相同的数据切分、相同的训练轮数和相近的超参数搜索预算，确保比较公平。
+
+\subsection{对比方法}
+主对比包括五个强基线：DLinear、PatchTST、TimesNet、iTransformer 和 TimeMixer。此外，还需加入三个辅助基线：验证集静态最优单模型、固定平均集成以及静态可学习加权集成。这些对比用于回答两个问题：第一，状态驱动决策是否优于单模型；第二，提升是否超过普通集成带来的收益。
+
+\subsection{主结果}
+主结果表按“数据集 $\times$ 预测长度”组织，报告 MSE 和 MAE。正文中重点分析以下现象：其一，SDPF 是否在大多数设置上优于最强单模型；其二，SDPF 相比静态集成是否仍有稳定收益；其三，提升是否主要集中在异质性更强或长预测跨度更大的场景。本节写作时不应只强调平均最优结果，而应同时报告不同数据集上的分布情况。
+
+\subsection{消融实验}
+消融实验围绕决策层各模块展开，建议至少包括以下设置：SDPF w/o Router、SDPF w/o Risk、SDPF w/o CaseBank、SDPF w/o Revision、SDPF single-model 和 SDPF full。同时，需要做候选模型池消融，严格使用如下组合：DLinear + PatchTST；DLinear + PatchTST + TimesNet；DLinear + PatchTST + TimesNet + iTransformer + TimeMixer。这些实验可以回答三个关键问题：状态特征是否真的有用，风险校验是否必要，经验案例检索是否提供了额外增益。
+
+\subsection{效率分析与案例分析}
+为了避免“精度提升仅来自更多计算”的质疑，本文还需报告效率指标，包括平均推理时间、平均候选模型调用数和修正触发比例。若 SDPF 在有限额外开销下获得稳定增益，则说明该框架具有实际价值。案例分析部分建议展示一个成功样本和一个失败样本。成功样本用于说明静态最优模型在该样本上失效，而状态驱动决策通过路由和修正获得了更优结果；失败样本用于说明当候选模型整体表达能力不足时，决策层无法从根本上弥补基模型缺陷。
+
+\section{讨论}
+SDPF 的核心意义不在于替代现有预测器，而在于在这些预测器之上增加一个样本级策略层。该框架特别适用于两类场景：一类是不同样本对应明显不同模型偏好的场景；另一类是部分样本具有高不确定性、需要二次判断和有限修正的场景。与此同时，本文方法也有明确边界。若候选模型池整体过弱，则再好的路由和修正也难以取得显著提升；若数据集内部状态差异较小，则动态策略的价值可能有限；案例库质量也会直接影响修正效果，因此案例筛选和更新规则仍有进一步研究空间。
+
+\section{结论}
+本文提出了一种面向时间序列预测的状态驱动预测决策框架 SDPF。该方法不改变 DLinear、PatchTST、TimesNet、iTransformer 和 TimeMixer 等基础预测器结构，而是在其上构建状态编码、策略路由、风险校验、经验检索和修正融合组成的轻量决策层。通过把预测建模为样本级策略选择问题，SDPF 有望在异质、非平稳和高风险场景中优于静态单模型与静态集成。本文进一步给出了完整的实验设计和消融方案，为后续实现、评估和投稿写作提供了可直接落地的写作基础。
+
+\section*{References}
+\begin{thebibliography}{00}
+
+\bibitem{dlinear} B. Zeng, M. Chen, L. Zhang, and Q. Xu, ``Are transformers effective for time series forecasting?,'' in \emph{Proc. AAAI Conf. Artif. Intell.}, 2023, pp. 11121--11128.
+
+\bibitem{patchtst} Y. Nie, N. H. Nguyen, P. Sinthong, and J. Kalagnanam, ``A time series is worth 64 words: Long-term forecasting with transformers,'' in \emph{Proc. Int. Conf. Learn. Represent.}, 2023.
+
+\bibitem{timesnet} H. Wu, T. Hu, Y. Liu, H. Zhou, J. Wang, and M. Long, ``TimesNet: Temporal 2D-variation modeling for general time series analysis,'' in \emph{Proc. Int. Conf. Learn. Represent.}, 2023.
+
+\bibitem{itransformer} Y. Liu, H. Hu, H. Zhang, S. Wu, and H. Wang, ``iTransformer: Inverted transformers are effective for time series forecasting,'' in \emph{Proc. Int. Conf. Learn. Represent.}, 2024.
+
+\bibitem{timemixer} S. Wang, Y. Li, X. Zhang, H. Jin, and D. Dou, ``TimeMixer: Decomposable multiscale mixing for time series forecasting,'' in \emph{Proc. Int. Conf. Learn. Represent.}, 2024.
+
+\end{thebibliography}
+
+\end{CJK*}
+\end{document}
